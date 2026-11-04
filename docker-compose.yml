@@ -1,0 +1,100 @@
+name: agent
+
+x-agent-common: &agent-common
+  build:
+    context: .
+    dockerfile: Dockerfile
+  image: agent-app:latest
+  restart: unless-stopped
+  env_file: .env
+  environment:
+    REDIS_HOST: redis
+    REDIS_PORT: "6379"
+    POSTGRES_HOST: postgres
+    POSTGRES_PORT: "5432"
+  extra_hosts:
+    - "host.docker.internal:host-gateway"   # alcança o Ollama que roda no host
+  networks: [assist]
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: agent-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-assist}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}
+      POSTGRES_DB: ${POSTGRES_DB:-assistdb}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/001-init.sql:ro
+    networks: [assist]
+    healthcheck:
+      # CMD-SHELL: evita o bug de passar "-U assist -d assistdb" como UM argumento
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7
+    container_name: agent-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?defina REDIS_PASSWORD no .env}"]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    ports:
+      - "127.0.0.1:${REDIS_HOST_PORT:-6380}:6379"   # só localhost: usado pelo host_runner
+    volumes:
+      - redisdata:/data
+    networks: [assist]
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" --no-auth-warning ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  agent-api:
+    <<: *agent-common
+    container_name: agent-api
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "${API_BIND:-0.0.0.0}:${API_PORT:-8000}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=4).status == 200 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+
+  agent-worker:
+    <<: *agent-common
+    container_name: agent-worker
+    # -m worker.worker (módulo) => "app" fica importável; "python worker/worker.py" quebraria o import
+    command: ["python", "-u", "-m", "worker.worker"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      agent-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os,sys,time; sys.exit(0 if time.time()-os.path.getmtime('/tmp/worker.alive')<180 else 1)"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+networks:
+  assist:
+    name: assist
+
+volumes:
+  pgdata:
+  redisdata:
