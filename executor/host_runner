@@ -1,0 +1,97 @@
+#!/usr/bin/env python3
+"""Executor do HOST: lê host_exec_stream (Redis) e roda SOMENTE
+`sudo -n /usr/local/bin/assist-safe-run <ação> ...`. Devolve o resultado em
+host_result_stream, que o agent-worker consome e grava na auditoria."""
+import os
+import subprocess
+import sys
+import time
+
+import redis
+
+WRAPPER = "/usr/local/bin/assist-safe-run"
+STREAM = os.getenv("HOST_EXEC_STREAM", "host_exec_stream")
+RESULT = os.getenv("HOST_RESULT_STREAM", "host_result_stream")
+GROUP = "host_runner"
+ME = os.uname().nodename
+
+
+def build_cmd(f: dict) -> list[str] | None:
+    """Traduz a mensagem em argumentos do wrapper. None = ação desconhecida.
+    O wrapper valida tudo de novo (defesa em profundidade)."""
+    a, svc = f.get("action", ""), f.get("service", "")
+    if a == "restart_service" and svc:
+        return ["restart", svc]
+    if a == "check_service_status" and svc:
+        return ["status", svc]
+    if a == "service_logs" and svc:
+        return ["logs", svc] + ([f["lines"]] if f.get("lines") else [])
+    if a == "disk_usage":
+        return ["disk"]
+    if a == "ufw_allow" and f.get("port") and f.get("proto"):
+        return ["ufw-allow", f["port"], f["proto"]]
+    return None
+
+
+def connect() -> redis.Redis:
+    r = redis.Redis(
+        host=os.getenv("REDIS_HOST", "127.0.0.1"),
+        port=int(os.getenv("REDIS_PORT", "6380")),
+        password=os.environ["REDIS_PASSWORD"],
+        decode_responses=True,
+        socket_connect_timeout=5,
+    )
+    r.ping()
+    try:
+        r.xgroup_create(STREAM, GROUP, id="0", mkstream=True)
+    except redis.ResponseError as e:
+        if "BUSYGROUP" not in str(e):
+            raise
+    return r
+
+
+def handle(r: redis.Redis, mid: str, f: dict) -> None:
+    cmd = build_cmd(f)
+    if cmd is None:
+        rc, out = 2, "ação desconhecida ou parâmetros ausentes"
+    else:
+        try:
+            p = subprocess.run(["sudo", "-n", WRAPPER, *cmd], capture_output=True, text=True, timeout=60)
+            rc, out = p.returncode, (p.stdout + p.stderr)
+        except subprocess.TimeoutExpired:
+            rc, out = 124, "timeout (60s)"
+    print(f"[{mid}] {f.get('action')} {cmd} -> rc={rc}", flush=True)
+    res = {"id": mid, "action": f.get("action", ""), "rc": str(rc), "out": out[-1500:]}
+    for k in ("service", "port", "proto", "approval_id"):
+        if f.get(k):
+            res[k] = f[k]
+    r.xadd(RESULT, res, maxlen=1000, approximate=True)
+
+
+def main() -> None:
+    while True:
+        try:
+            r = connect()
+            print(f"runner pronto: {STREAM} -> {RESULT} ({ME})", flush=True)
+            backlog_done = False  # reprocessa mensagens pendentes ("0") antes das novas (">")
+            while True:
+                sid = ">" if backlog_done else "0"
+                resp = r.xreadgroup(GROUP, ME, {STREAM: sid}, count=5, block=5000 if backlog_done else None)
+                if not backlog_done and (not resp or all(not m for _, m in resp)):
+                    backlog_done = True
+                    continue
+                for _, msgs in resp or []:
+                    for mid, f in msgs:
+                        try:
+                            handle(r, mid, f)
+                        finally:
+                            r.xack(STREAM, GROUP, mid)
+        except KeyError as e:
+            sys.exit(f"variável ausente: {e} (veja /etc/assist/runner.env)")
+        except Exception as e:  # noqa: BLE001
+            print(f"erro: {type(e).__name__}: {e}; nova tentativa em 5s", file=sys.stderr, flush=True)
+            time.sleep(5)
+
+
+if __name__ == "__main__":
+    main()
