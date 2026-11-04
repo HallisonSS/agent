@@ -1,0 +1,6 @@
+# Um serviço systemd por linha (sem espaços). Só estes podem ser consultados/reiniciados.
+# NÃO coloque ssh, docker, sudo, systemd-* aqui.
+nginx
+ollama
+prometheus
+grafana-server
