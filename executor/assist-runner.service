@@ -1,0 +1,20 @@
+[Unit]
+Description=AGENT host runner (executa ações aprovadas via assist-safe-run)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=assistbot
+Group=assistbot
+EnvironmentFile=/etc/assist/runner.env
+ExecStart=/usr/bin/python3 /opt/assist/host_runner.py
+Restart=always
+RestartSec=3
+# ATENÇÃO: não use NoNewPrivileges=true (bloqueia o sudo) nem ProtectSystem=strict
+# (os comandos filhos, como ufw, precisam escrever em /etc).
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
