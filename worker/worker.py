@@ -20,6 +20,9 @@ from app.redis_client import close_redis, get_redis
 from app.tools import executor
 from worker import policies
 
+from app.ia.agents_impl.security import run
+from app.security.policy import decide as decide_security
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("agent.worker")
 
@@ -27,7 +30,6 @@ S = get_settings()
 HEARTBEAT = Path("/tmp/worker.alive")
 SEVERITIES = {"info", "warning", "critical"}
 WATCHED = (S.alerts_stream, S.actions_stream, S.host_result_stream)
-
 
 def beat() -> None:
     HEARTBEAT.touch()
@@ -111,7 +113,34 @@ async def decide(alert: dict) -> dict:
             "llm_model": None,
         }
 
+SECURITY_INTERVAL = 60  # segundos
 
+async def security_cycle() -> None:
+    try:
+        plan, failures = await asyncio.to_thread(run)   # run() é síncrono/bloqueante
+        verdict = decide_security(plan, failures)
+        if plan.action == "none" or not plan.ip:
+            return
+        if verdict == "auto":
+            r = await get_redis()
+            await r.xadd(S.actions_stream, {"action": plan.action, "ip": plan.ip})
+        elif verdict == "approval":
+            save_pending(plan)
+        log.info("security verdict=%s action=%s ip=%s", verdict, plan.action, plan.ip)
+    except Exception:
+        log.exception("security_cycle falhou")
+
+
+async def security_loop() -> None:
+    while True:
+        await security_cycle()
+        await asyncio.sleep(SECURITY_INTERVAL)
+
+
+async def security_loop() -> None:
+    while True:
+        await security_cycle()
+        await asyncio.sleep(SECURITY_INTERVAL)
 async def handle_alert(fields: dict) -> None:
     r = get_redis()
     labels = _loads(fields.get("labels"), {})
