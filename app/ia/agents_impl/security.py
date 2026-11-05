@@ -1,7 +1,7 @@
 # app/ia/agents_impl/security.py
 from app.schemas.security import Plan, validate
 from app.tools.security import ssh_failures
-from app.ia.providers import openai_json
+from app.ia.provider import openai_json
 
 SYSTEM = SYSTEM = """Você é o agent-security de um Ubuntu Server. Receberá contagens de falhas de SSH por IP.
 Responda SOMENTE JSON, sem markdown, no schema:
