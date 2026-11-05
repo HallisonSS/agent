@@ -1,0 +1,10 @@
+services:
+  grafana:
+    image: grafana/grafana:11.0.0
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin_pass
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./observability/grafana/data:/var/lib/grafana
