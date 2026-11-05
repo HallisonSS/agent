@@ -15,6 +15,23 @@ svc_ok() {
 }
 num_ok() { [[ "$1" =~ ^[0-9]{1,5}$ ]]; }
 
+# Redes que o agente NUNCA pode bloquear (LAN, WireGuard, IP da VPS, seu IP de admin)
+PROTECTED_NETS="127.0.0.0/8 10.0.0.0/24"
+
+_ip() {
+  python3 -c '
+import sys, ipaddress
+mode, ip = sys.argv[1], ipaddress.ip_address(sys.argv[2])
+if mode == "protect":
+    if ip.is_loopback or ip.is_unspecified or ip.is_multicast:
+        sys.exit(1)
+    if any(ip in ipaddress.ip_network(n, strict=False) for n in sys.argv[3:]):
+        sys.exit(1)
+' "$@" 2>/dev/null
+}
+ip_valid() { _ip valid "$1"; }                    # só sintaxe (v4/v6)
+ip_ok()    { _ip protect "$1" $PROTECTED_NETS; }  # sintaxe + não protegido
+
 [[ $# -ge 1 ]] || deny "(vazio)"
 ACTION="$1"; shift
 log "OK? $ACTION $*"
