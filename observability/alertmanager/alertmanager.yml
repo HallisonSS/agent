@@ -1,0 +1,6 @@
+route:
+  receiver: 'default'
+receivers:
+  - name: 'default'
+    webhook_configs:
+      - url: "http://agent-api:8000/alerts"  # API do agente
