@@ -62,4 +62,20 @@ case "$ACTION" in
     exec ufw reload ;;
   *)
     deny "$ACTION $*" ;;
+  f2b-ban)
+    [[ $# -eq 1 ]] && ip_ok "$1" || deny "$ACTION $*"
+    exec fail2ban-client set sshd banip "$1" ;;
+  f2b-unban)
+    [[ $# -eq 1 ]] && ip_valid "$1" || deny "$ACTION $*"
+    exec fail2ban-client set sshd unbanip "$1" ;;
+  ip-deny)
+    [[ $# -eq 1 ]] && ip_ok "$1" || deny "$ACTION $*"
+    exec ufw insert 1 deny from "$1" comment "agent-security" ;;
+  ip-undeny)
+    [[ $# -eq 1 ]] && ip_valid "$1" || deny "$ACTION $*"
+    exec ufw --force delete deny from "$1" ;;
+  sec-status)
+    [[ $# -eq 0 ]] || deny "$ACTION $*"
+    ufw status numbered
+    exec fail2ban-client status sshd ;;
 esac
