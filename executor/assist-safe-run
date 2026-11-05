@@ -22,13 +22,16 @@ _ip() {
   python3 -c '
 import sys, ipaddress
 mode, ip = sys.argv[1], ipaddress.ip_address(sys.argv[2])
+if getattr(ip, "ipv4_mapped", None):
+    ip = ip.ipv4_mapped
 if mode == "protect":
-    if ip.is_loopback or ip.is_unspecified or ip.is_multicast:
+    if ip.is_loopback or ip.is_unspecified or ip.is_multicast or ip.is_link_local:
         sys.exit(1)
     if any(ip in ipaddress.ip_network(n, strict=False) for n in sys.argv[3:]):
         sys.exit(1)
 ' "$@" 2>/dev/null
 }
+
 ip_valid() { _ip valid "$1"; }                    # só sintaxe (v4/v6)
 ip_ok()    { _ip protect "$1" $PROTECTED_NETS; }  # sintaxe + não protegido
 
