@@ -30,6 +30,17 @@ def build_cmd(f: dict) -> list[str] | None:
         return ["disk"]
     if a == "ufw_allow" and f.get("port") and f.get("proto"):
         return ["ufw-allow", f["port"], f["proto"]]
+    ip = _ip(f.get("ip", ""))
+    if a == "sec_ban" and ip:
+        return ["f2b-ban", ip]
+    if a == "sec_unban" and ip:
+        return ["f2b-unban", ip]
+    if a == "ip_deny" and ip:
+        return ["ip-deny", ip]
+    if a == "ip_undeny" and ip:
+        return ["ip-undeny", ip]
+    if a == "sec_status":
+        return ["sec-status"]
     return None
 
 
