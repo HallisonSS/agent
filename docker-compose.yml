@@ -60,11 +60,20 @@ services:
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
     ports:
       - "${API_BIND:-0.0.0.0}:${API_PORT:-8000}:8000"
+    group_add: ["4"]            # GID do grupo adm no host (confira: getent group adm)
+    read_only: true             # filesystem do container imutável
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    volumes:
+      - /var/log/agent:/logs:ro # pasta, somente leitura
+    environment:
+      AUTH_LOG_PATH: /logs/auth.log 
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+    networks: [assist]    
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=4).status == 200 else 1)"]
       interval: 10s
