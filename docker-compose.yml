@@ -97,8 +97,56 @@ services:
       test: ["CMD", "python", "-c", "import os,sys,time; sys.exit(0 if time.time()-os.path.getmtime('/tmp/worker.alive')<180 else 1)"]
       interval: 20s
       timeout: 5s
-      retries: 3
+      retries: 3  prometheus:
+    image: prom/prometheus:v2.54.1
+    volumes:
+      - ../observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../observability/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+    ports:
+      - "9090:9090"
+    networks: [assist]
+
+  grafana:
+    image: grafana/grafana:11.0.0
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin_pass
+    volumes:
+      - ../observability/grafana/data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    networks: [assist]
       start_period: 20s
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    volumes:
+      - ../observability/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    ports:
+      - "9093:9093"
+    depends_on:  
+      - agent-api
+    networks: [assist]
+
+  loki:
+    image: grafana/loki:2.9.6
+    command: -config.file=/etc/loki/config.yaml
+    volumes:
+      - ../observability/loki/config.yaml:/etc/loki/config.yaml
+      - ../observability/loki/data:/loki
+    ports:
+      - "3100:3100"
+    networks: assist
+
+  promtail:
+    image: grafana/promtail:2.9.6
+    command: -config.file=/etc/promtail/config.yaml
+    volumes:
+      - ../observability/promtail/config.yaml:/etc/promtail/config.yaml
+      - /var/log:/var/log:ro
+    depends_on: 
+      - loki
+    networks: [assist]
 
 networks:
   assist:
