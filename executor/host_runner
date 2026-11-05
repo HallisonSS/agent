@@ -8,6 +8,7 @@ import sys
 import time
 
 import redis
+import ipaddress
 
 WRAPPER = "/usr/local/bin/assist-safe-run"
 STREAM = os.getenv("HOST_EXEC_STREAM", "host_exec_stream")
@@ -15,6 +16,11 @@ RESULT = os.getenv("HOST_RESULT_STREAM", "host_result_stream")
 GROUP = "host_runner"
 ME = os.uname().nodename
 
+def _ip(v: str) -> str | None:
+    try:
+        return str(ipaddress.ip_address(v))
+    except ValueError:
+        return None
 
 def build_cmd(f: dict) -> list[str] | None:
     """Traduz a mensagem em argumentos do wrapper. None = ação desconhecida.
