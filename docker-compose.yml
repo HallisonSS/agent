@@ -93,6 +93,7 @@ services:
         condition: service_healthy
       agent-api:
         condition: service_healthy
+    pid: host
     healthcheck:
       test: ["CMD", "python", "-c", "import os,sys,time; sys.exit(0 if time.time()-os.path.getmtime('/tmp/worker.alive')<180 else 1)"]
       interval: 20s
