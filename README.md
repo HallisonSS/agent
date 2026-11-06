@@ -1,4 +1,4 @@
-# AGENT — API + Worker + Postgres + Redis
+# AGENT — API + Worker + Postgres + Redis + orchestration + Agent-security-monitor
 
 ## Subir
 ```bash
